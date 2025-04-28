@@ -1590,6 +1590,306 @@
             // 添加批量导出按钮事件
             batchExportButton.addEventListener('click', batchExport);
 
+            // Excel上传相关功能
+            const excelUploadSection = document.getElementById('excelUploadSection');
+            const excelUploadInput = document.getElementById('excelUpload');
+            const dataList = document.getElementById('dataList');
+            const prevButton = document.getElementById('prevButton');
+            const nextButton = document.getElementById('nextButton');
+            const currentIndexSpan = document.getElementById('currentIndex');
+            const batchExportButton = document.getElementById('batchExportButton');
+            const progressBarContainer = document.getElementById('progressBarContainer');
+            const progressBar = document.getElementById('progressBar');
+            const exportProgressDetail = document.getElementById('exportProgressDetail');
+
+            // 处理Excel文件
+            function handleExcelFile(file) {
+                if (file && (file.name.endsWith('.xlsx') || file.name.endsWith('.xls'))) {
+                    const reader = new FileReader();
+                    reader.onload = function(e) {
+                        try {
+                            const data = new Uint8Array(e.target.result);
+                            const workbook = XLSX.read(data, {type: 'array'});
+                            
+                            // 获取第一个工作表
+                            const firstSheetName = workbook.SheetNames[0];
+                            const worksheet = workbook.Sheets[firstSheetName];
+                            
+                            // 转换为JSON
+                            const jsonData = XLSX.utils.sheet_to_json(worksheet);
+                            
+                            if (jsonData.length === 0) {
+                                alert('Excel文件中没有找到数据');
+                                return;
+                            }
+                            
+                            // 保存数据并显示
+                            excelData = jsonData;
+                            displayExcelData(jsonData);
+                            
+                            // 显示导航按钮
+                            document.querySelector('.nav-buttons').style.display = 'flex';
+                            batchExportButton.style.display = 'block';
+                            
+                            // 选择第一条数据
+                            selectData(0);
+                            
+                            console.log('Excel数据导入成功:', jsonData);
+                        } catch (error) {
+                            console.error('处理Excel文件时出错:', error);
+                            alert('处理Excel文件时出错: ' + error.message);
+                        }
+                    };
+                    reader.onerror = function() {
+                        alert('读取文件时出错');
+                    };
+                    reader.readAsArrayBuffer(file);
+                } else {
+                    alert('请上传有效的Excel文件(.xlsx或.xls)');
+                }
+            }
+
+            // 显示Excel数据列表
+            function displayExcelData(data) {
+                dataList.innerHTML = '';
+                dataList.style.display = 'block';
+                
+                data.forEach((item, index) => {
+                    const dataItem = document.createElement('div');
+                    dataItem.className = 'data-item';
+                    dataItem.dataset.index = index;
+                    
+                    // 显示数据预览（最多显示3个字段）
+                    let preview = '';
+                    let count = 0;
+                    for (const key in item) {
+                        if (count < 3) {
+                            preview += `${key}: ${item[key]}, `;
+                            count++;
+                        } else {
+                            break;
+                        }
+                    }
+                    preview = preview.slice(0, -2); // 移除最后的逗号和空格
+                    
+                    dataItem.textContent = `#${index + 1}: ${preview}`;
+                    dataItem.addEventListener('click', () => selectData(index));
+                    
+                    dataList.appendChild(dataItem);
+                });
+            }
+
+            // 选择数据项
+            function selectData(index) {
+                if (index < 0 || index >= excelData.length) return;
+    
+                // 更新当前索引
+                currentDataIndex = index;
+                currentIndexSpan.textContent = `${index + 1}/${excelData.length}`;
+                
+                // 更新按钮状态
+                prevButton.disabled = index === 0;
+                nextButton.disabled = index === excelData.length - 1;
+                
+                // 高亮选中项
+                const items = dataList.querySelectorAll('.data-item');
+                items.forEach(item => item.classList.remove('active'));
+                items[index].classList.add('active');
+                
+                // 应用数据到页面
+                applyDataToPage(excelData[index]);
+            }
+
+            // 应用数据到页面
+            function applyDataToPage(data) {
+                // 检查数据中是否有标题字段
+                if (data.title || data.Title || data.标题) {
+                    const title = data.title || data.Title || data.标题;
+                    if (typeof title === 'string') {
+                        const titleLines = title.split(/[,，;；\n]/);
+                        let titleText = '';
+                        for (let i = 0; i < Math.min(titleLines.length, 3); i++) {
+                            titleText += titleLines[i] + (i < Math.min(titleLines.length, 3) - 1 ? '\n' : '');
+                        }
+                        document.getElementById('titleText').value = titleText;
+                        applyTitleChanges();
+                    }
+                }
+                
+                // 检查数据中是否有段落字段
+                if (data.paragraph1 || data.Paragraph1 || data.段落1 || data.正文1) {
+                    const para1 = data.paragraph1 || data.Paragraph1 || data.段落1 || data.正文1;
+                    document.getElementById('paragraph1').value = para1;
+                    document.getElementById('displayParagraph1').textContent = para1;
+                }
+                
+                if (data.paragraph2 || data.Paragraph2 || data.段落2 || data.正文2) {
+                    const para2 = data.paragraph2 || data.Paragraph2 || data.段落2 || data.正文2;
+                    document.getElementById('paragraph2').value = para2;
+                    document.getElementById('displayParagraph2').textContent = para2;
+                }
+                
+                if (data.paragraph3 || data.Paragraph3 || data.段落3 || data.正文3) {
+                    const para3 = data.paragraph3 || data.Paragraph3 || data.段落3 || data.正文3;
+                    document.getElementById('paragraph3').value = para3;
+                    document.getElementById('displayParagraph3').textContent = para3;
+                }
+                
+                // 如果有图片字段，尝试加载图片
+                if (data.image || data.Image || data.图片) {
+                    const imagePath = data.image || data.Image || data.图片;
+                    if (typeof imagePath === 'string' && imagePath.trim() !== '') {
+                        try {
+                            // 尝试从tu文件夹加载图片
+                            const articleImage = document.querySelector('.article-image');
+                            articleImage.src = `./tu/${imagePath}`;
+                            articleImage.alt = imagePath.split('.')[0];
+                            currentImageFile = imagePath;
+                            updateCurrentImageInfo();
+                            
+                            // 触发图片加载完成后的布局调整
+                            articleImage.onload = function() {
+                                // 重新应用随机布局
+                                applyRandomIndents();
+                            };
+                        } catch (error) {
+                            console.error('加载图片时出错:', error);
+                        }
+                    }
+                } else {
+                    // 如果没有指定图片，应用随机布局
+                    applyRandomIndents();
+                }
+            }
+
+            // 批量导出功能
+            async function batchExport() {
+                if (!excelData || excelData.length === 0) {
+                    alert('没有数据可导出');
+                    return;
+                }
+                
+                try {
+                    // 显示进度条
+                    progressBarContainer.style.display = 'block';
+                    exportProgress.style.display = 'block';
+                    
+                    // 创建一个ZIP文件
+                    const zip = new JSZip();
+                    
+                    // 遍历所有数据
+                    for (let i = 0; i < excelData.length; i++) {
+                        // 更新进度
+                        progressBar.style.width = `${(i / excelData.length) * 100}%`;
+                        exportProgressDetail.textContent = `正在处理: ${i + 1}/${excelData.length}`;
+                        
+                        // 应用当前数据
+                        selectData(i);
+                        
+                        // 等待布局调整完成
+                        await new Promise(resolve => setTimeout(resolve, 500));
+                        
+                        // 导出当前页面
+                        const canvasContainer = document.getElementById('canvasContainer');
+                        
+                        // 记录原始样式
+                        const originalTransform = canvasContainer.style.transform;
+                        const originalPosition = canvasContainer.style.position;
+                        const originalZoom = canvasContainer.style.zoom;
+                        const originalOverflow = canvasContainer.style.overflow;
+                        
+                        // 重置样式
+                        canvasContainer.style.transform = 'none';
+                        canvasContainer.style.position = 'static';
+                        canvasContainer.style.zoom = '1';
+                        canvasContainer.style.overflow = 'visible';
+                        canvasContainer.style.width = '900px';
+                        canvasContainer.style.height = '1500px';
+                        
+                        // 确保样式正确应用
+                        ensureStyles();
+                        
+                        // 等待图片加载
+                        await waitForImages();
+                        await new Promise(resolve => setTimeout(resolve, 300));
+                        
+                        // 导出
+                        const canvas = await html2canvas(canvasContainer, {
+                            scale: 2,
+                            useCORS: true,
+                            backgroundColor: '#fff',
+                            logging: false,
+                            width: 900,
+                            height: 1500
+                        });
+                        
+                        // 恢复样式
+                        canvasContainer.style.transform = originalTransform;
+                        canvasContainer.style.position = originalPosition;
+                        canvasContainer.style.zoom = originalZoom;
+                        canvasContainer.style.overflow = originalOverflow;
+                        
+                        // 将图片添加到ZIP
+                        const imgData = canvas.toDataURL('image/png').split(',')[1];
+                        zip.file(`排版预览_${i + 1}.png`, imgData, {base64: true});
+                    }
+                    
+                    // 生成ZIP文件
+                    const content = await zip.generateAsync({type: 'blob'});
+                    
+                    // 下载ZIP文件
+                    const link = document.createElement('a');
+                    link.download = '排版预览_批量导出.zip';
+                    link.href = URL.createObjectURL(content);
+                    link.click();
+                    URL.revokeObjectURL(link.href);
+                    
+                    // 隐藏进度条
+                    progressBarContainer.style.display = 'none';
+                    exportProgress.style.display = 'none';
+                    
+                    alert('批量导出完成');
+                } catch (error) {
+                    console.error('批量导出时出错:', error);
+                    alert('批量导出时出错: ' + error.message);
+                    progressBarContainer.style.display = 'none';
+                    exportProgress.style.display = 'none';
+                }
+            }
+
+            // 文件输入改变事件
+            excelUploadInput.addEventListener('change', function(e) {
+                const file = e.target.files[0];
+                handleExcelFile(file);
+            });
+
+            // 拖拽事件处理
+            excelUploadSection.addEventListener('dragover', function(e) {
+                e.preventDefault();
+                this.classList.add('drag-over');
+            });
+
+            excelUploadSection.addEventListener('dragleave', function(e) {
+                e.preventDefault();
+                this.classList.remove('drag-over');
+            });
+
+            excelUploadSection.addEventListener('drop', function(e) {
+                e.preventDefault();
+                this.classList.remove('drag-over');
+                const file = e.dataTransfer.files[0];
+                handleExcelFile(file);
+            });
+
+            // 导航按钮事件
+            prevButton.addEventListener('click', function() {
+                selectData(currentDataIndex - 1);
+            });
+
+            nextButton.addEventListener('click', function() {
+                selectData(currentDataIndex + 1);
+            });
+            
             // 添加JSZip库
             const script = document.createElement('script');
             script.src = 'https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js';
@@ -1597,4 +1897,4 @@
         };
     </script>
 </body>
-</html> 
+</html>
