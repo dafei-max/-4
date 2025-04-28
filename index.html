@@ -1443,142 +1443,110 @@
             const exportButton = document.getElementById('exportButton');
             const exportProgress = document.getElementById('exportProgress');
 
-            // 添加等待函数
-            function waitForImages() {
-                return new Promise((resolve) => {
-                    const images = document.getElementsByTagName('img');
-                    let loadedImages = 0;
-                    
-                    if (images.length === 0) {
-                        resolve();
-                        return;
-                    }
-                    
-                    for (let img of images) {
-                        if (img.complete) {
-                            loadedImages++;
-                        } else {
-                            img.onload = () => {
-                                loadedImages++;
-                                if (loadedImages === images.length) {
-                                    resolve();
-                                }
-                            };
-                            img.onerror = () => {
-                                loadedImages++;
-                                if (loadedImages === images.length) {
-                                    resolve();
-                                }
-                            };
-                        }
-                    }
-                    
-                    if (loadedImages === images.length) {
-                        resolve();
-                    }
-                });
-            }
-
-            // 添加样式应用函数
-            function ensureStyles() {
-                const canvasContainer = document.getElementById('canvasContainer');
-                const content = canvasContainer.querySelector('.content');
-                const titleTexts = canvasContainer.querySelectorAll('.title-text');
-                const paragraphs = canvasContainer.querySelectorAll('.article-text p');
-                
-                // 确保容器样式
-                canvasContainer.style.backgroundColor = '#ffffff';
-                canvasContainer.style.display = 'block';
-                canvasContainer.style.visibility = 'visible';
-                canvasContainer.style.opacity = '1';
-                
-                // 确保内容区域样式
-                if (content) {
-                    content.style.backgroundColor = '#ffffff';
-                    content.style.display = 'block';
-                    content.style.visibility = 'visible';
-                    content.style.opacity = '1';
-                }
-                
-                // 确保标题样式
-                titleTexts.forEach(title => {
-                    title.style.color = '#2a1100';
-                    title.style.opacity = '1';
-                    title.style.visibility = 'visible';
-                    title.style.display = 'block';
-                });
-                
-                // 确保段落样式
-                paragraphs.forEach(p => {
-                    p.style.color = '#2a1100';
-                    p.style.opacity = '1';
-                    p.style.visibility = 'visible';
-                    p.style.display = 'block';
-                });
-            }
-
             // 单个导出功能
             exportButton.addEventListener('click', async function() {
                 try {
+                    // 显示进度提示
                     exportProgress.style.display = 'block';
+                    
+                    // 获取画布容器
                     const canvasContainer = document.getElementById('canvasContainer');
-
-                    // 记录原始样式
+                    
+                    // 临时移除transform以确保正确捕获
                     const originalTransform = canvasContainer.style.transform;
                     const originalPosition = canvasContainer.style.position;
                     const originalZoom = canvasContainer.style.zoom;
-                    const originalOverflow = canvasContainer.style.overflow;
-                    const originalFont = canvasContainer.style.fontFamily;
-
-                    // 重置样式
+                    
+                    // 重置容器样式以确保正确捕获
                     canvasContainer.style.transform = 'none';
-                    canvasContainer.style.position = 'static';
+                    canvasContainer.style.position = 'relative';
                     canvasContainer.style.zoom = '1';
-                    canvasContainer.style.overflow = 'visible';
+                    
+                    // 确保容器尺寸正确
                     canvasContainer.style.width = '900px';
                     canvasContainer.style.height = '1500px';
-                    canvasContainer.style.backgroundColor = '#fff';
-                    canvasContainer.style.fontFamily = 'Arial, sans-serif';
 
-                    // 内容区字体也临时设为Arial
-                    const content = canvasContainer.querySelector('.content');
-                    const oldContentFont = content.style.fontFamily;
-                    content.style.fontFamily = 'Arial, sans-serif';
+                    // 等待所有图片加载完成
+                    const images = canvasContainer.getElementsByTagName('img');
+                    await Promise.all(Array.from(images).map(img => {
+                        if (img.complete) return Promise.resolve();
+                        return new Promise((resolve, reject) => {
+                            img.onload = resolve;
+                            img.onerror = reject;
+                        });
+                    }));
 
-                    // 等待图片加载
-                    await waitForImages();
+                    // 确保内容完全渲染
                     await new Promise(resolve => setTimeout(resolve, 500));
 
-                    // 导出
+                    // 使用html2canvas捕获内容
                     const canvas = await html2canvas(canvasContainer, {
-                        scale: 2,
-                        useCORS: true,
-                        backgroundColor: '#fff',
+                        scale: 2, // 提高输出质量
+                        useCORS: true, // 允许跨域图片
+                        backgroundColor: '#ffffff',
                         logging: true,
-                        width: 900,
-                        height: 1500
+                        allowTaint: true,
+                        foreignObjectRendering: true,
+                        width: 900, // 明确设置宽度
+                        height: 1500, // 明确设置高度
+                        onclone: function(clonedDoc) {
+                            const clonedContainer = clonedDoc.querySelector('#canvasContainer');
+                            if (clonedContainer) {
+                                // 确保克隆的容器具有正确的样式和尺寸
+                                clonedContainer.style.transform = 'none';
+                                clonedContainer.style.position = 'relative';
+                                clonedContainer.style.zoom = '1';
+                                clonedContainer.style.width = '900px';
+                                clonedContainer.style.height = '1500px';
+                                clonedContainer.style.display = 'block';
+                                clonedContainer.style.visibility = 'visible';
+                                clonedContainer.style.opacity = '1';
+                                
+                                // 确保内容区域也具有正确的尺寸
+                                const content = clonedContainer.querySelector('.content');
+                                if (content) {
+                                    content.style.width = '800px';
+                                    content.style.height = '1376px';
+                                    content.style.margin = '50px 50px 74px 50px';
+                                }
+                            }
+                        }
                     });
 
-                    // 恢复样式
+                    // 检查canvas是否成功创建和尺寸是否正确
+                    if (!canvas || canvas.width === 0 || canvas.height === 0) {
+                        throw new Error('Canvas生成失败或尺寸为0');
+                    }
+
+                    console.log('Canvas生成成功:', {
+                        width: canvas.width,
+                        height: canvas.height,
+                        scale: 2,
+                        expectedWidth: 1800, // 900 * 2
+                        expectedHeight: 3000 // 1500 * 2
+                    });
+
+                    // 恢复原始样式
                     canvasContainer.style.transform = originalTransform;
                     canvasContainer.style.position = originalPosition;
                     canvasContainer.style.zoom = originalZoom;
-                    canvasContainer.style.overflow = originalOverflow;
-                    canvasContainer.style.fontFamily = originalFont;
-                    if(content) content.style.fontFamily = oldContentFont;
 
-                    // 下载
+                    // 转换为blob并下载
                     canvas.toBlob(function(blob) {
                         if (!blob || blob.size < 1000) {
                             throw new Error('生成的图片大小异常小，可能是空白图片');
                         }
+
                         const link = document.createElement('a');
                         link.download = '排版预览.png';
                         link.href = URL.createObjectURL(blob);
                         link.click();
                         URL.revokeObjectURL(link.href);
+
+                        console.log('图片导出成功，大小:', blob.size, '字节');
                     }, 'image/png', 1.0);
 
+                    // 隐藏进度提示
                     exportProgress.style.display = 'none';
                 } catch (error) {
                     console.error('导出图片时发生错误:', error);
@@ -1587,283 +1555,256 @@
                 }
             });
 
-            // 添加批量导出按钮事件
-            batchExportButton.addEventListener('click', batchExport);
-
-            // Excel上传相关功能
+            // Excel处理相关功能
             const excelUploadSection = document.getElementById('excelUploadSection');
             const excelUploadInput = document.getElementById('excelUpload');
             const dataList = document.getElementById('dataList');
+            const navButtons = document.querySelector('.nav-buttons');
             const prevButton = document.getElementById('prevButton');
             const nextButton = document.getElementById('nextButton');
             const currentIndexSpan = document.getElementById('currentIndex');
+
+            // 批量导出相关变量
             const batchExportButton = document.getElementById('batchExportButton');
             const progressBarContainer = document.getElementById('progressBarContainer');
             const progressBar = document.getElementById('progressBar');
             const exportProgressDetail = document.getElementById('exportProgressDetail');
 
-            // 处理Excel文件
-            function handleExcelFile(file) {
-                if (file && (file.name.endsWith('.xlsx') || file.name.endsWith('.xls'))) {
-                    const reader = new FileReader();
-                    reader.onload = function(e) {
-                        try {
-                            const data = new Uint8Array(e.target.result);
-                            const workbook = XLSX.read(data, {type: 'array'});
-                            
-                            // 获取第一个工作表
-                            const firstSheetName = workbook.SheetNames[0];
-                            const worksheet = workbook.Sheets[firstSheetName];
-                            
-                            // 转换为JSON
-                            const jsonData = XLSX.utils.sheet_to_json(worksheet);
-                            
-                            if (jsonData.length === 0) {
-                                alert('Excel文件中没有找到数据');
-                                return;
-                            }
-                            
-                            // 保存数据并显示
-                            excelData = jsonData;
-                            displayExcelData(jsonData);
-                            
-                            // 显示导航按钮
-                            document.querySelector('.nav-buttons').style.display = 'flex';
-                            batchExportButton.style.display = 'block';
-                            
-                            // 选择第一条数据
-                            selectData(0);
-                            
-                            console.log('Excel数据导入成功:', jsonData);
-                        } catch (error) {
-                            console.error('处理Excel文件时出错:', error);
-                            alert('处理Excel文件时出错: ' + error.message);
-                        }
-                    };
-                    reader.onerror = function() {
-                        alert('读取文件时出错');
-                    };
-                    reader.readAsArrayBuffer(file);
-                } else {
-                    alert('请上传有效的Excel文件(.xlsx或.xls)');
-                }
-            }
-
-            // 显示Excel数据列表
-            function displayExcelData(data) {
-                dataList.innerHTML = '';
-                dataList.style.display = 'block';
+            // 加载数据项
+            async function loadDataItem(index) {
+                if(index < 0 || index >= excelData.length) return;
                 
-                data.forEach((item, index) => {
-                    const dataItem = document.createElement('div');
-                    dataItem.className = 'data-item';
-                    dataItem.dataset.index = index;
-                    
-                    // 显示数据预览（最多显示3个字段）
-                    let preview = '';
-                    let count = 0;
-                    for (const key in item) {
-                        if (count < 3) {
-                            preview += `${key}: ${item[key]}, `;
-                            count++;
-                        } else {
-                            break;
-                        }
-                    }
-                    preview = preview.slice(0, -2); // 移除最后的逗号和空格
-                    
-                    dataItem.textContent = `#${index + 1}: ${preview}`;
-                    dataItem.addEventListener('click', () => selectData(index));
-                    
-                    dataList.appendChild(dataItem);
-                });
-            }
-
-            // 选择数据项
-            function selectData(index) {
-                if (index < 0 || index >= excelData.length) return;
-    
-                // 更新当前索引
+                const item = excelData[index];
                 currentDataIndex = index;
-                currentIndexSpan.textContent = `${index + 1}/${excelData.length}`;
                 
-                // 更新按钮状态
-                prevButton.disabled = index === 0;
-                nextButton.disabled = index === excelData.length - 1;
+                // 更新标题和段落
+                titleText.value = item.title || '';
+                paragraph1.value = item.paragraph1 || '';
+                paragraph2.value = item.paragraph2 || '';
+                paragraph3.value = item.paragraph3 || '';
                 
-                // 高亮选中项
-                const items = dataList.querySelectorAll('.data-item');
-                items.forEach(item => item.classList.remove('active'));
-                items[index].classList.add('active');
+                // 触发文本更新
+                titleText.dispatchEvent(new Event('input'));
+                paragraph1.dispatchEvent(new Event('input'));
+                paragraph2.dispatchEvent(new Event('input'));
+                paragraph3.dispatchEvent(new Event('input'));
                 
-                // 应用数据到页面
-                applyDataToPage(excelData[index]);
-            }
-
-            // 应用数据到页面
-            function applyDataToPage(data) {
-                // 检查数据中是否有标题字段
-                if (data.title || data.Title || data.标题) {
-                    const title = data.title || data.Title || data.标题;
-                    if (typeof title === 'string') {
-                        const titleLines = title.split(/[,，;；\n]/);
-                        let titleText = '';
-                        for (let i = 0; i < Math.min(titleLines.length, 3); i++) {
-                            titleText += titleLines[i] + (i < Math.min(titleLines.length, 3) - 1 ? '\n' : '');
-                        }
-                        document.getElementById('titleText').value = titleText;
-                        applyTitleChanges();
-                    }
-                }
-                
-                // 检查数据中是否有段落字段
-                if (data.paragraph1 || data.Paragraph1 || data.段落1 || data.正文1) {
-                    const para1 = data.paragraph1 || data.Paragraph1 || data.段落1 || data.正文1;
-                    document.getElementById('paragraph1').value = para1;
-                    document.getElementById('displayParagraph1').textContent = para1;
-                }
-                
-                if (data.paragraph2 || data.Paragraph2 || data.段落2 || data.正文2) {
-                    const para2 = data.paragraph2 || data.Paragraph2 || data.段落2 || data.正文2;
-                    document.getElementById('paragraph2').value = para2;
-                    document.getElementById('displayParagraph2').textContent = para2;
-                }
-                
-                if (data.paragraph3 || data.Paragraph3 || data.段落3 || data.正文3) {
-                    const para3 = data.paragraph3 || data.Paragraph3 || data.段落3 || data.正文3;
-                    document.getElementById('paragraph3').value = para3;
-                    document.getElementById('displayParagraph3').textContent = para3;
-                }
-                
-                // 如果有图片字段，尝试加载图片
-                if (data.image || data.Image || data.图片) {
-                    const imagePath = data.image || data.Image || data.图片;
-                    if (typeof imagePath === 'string' && imagePath.trim() !== '') {
-                        try {
-                            // 尝试从tu文件夹加载图片
-                            const articleImage = document.querySelector('.article-image');
-                            articleImage.src = `./tu/${imagePath}`;
-                            articleImage.alt = imagePath.split('.')[0];
-                            currentImageFile = imagePath;
-                            updateCurrentImageInfo();
+                // 处理图片加载
+                const articleImage = document.querySelector('.article-image');
+                if(item.image) {
+                    console.log(`尝试加载图片 [${index + 1}]:`, item.image);
+                    
+                    try {
+                        await new Promise((resolve, reject) => {
+                            // 保存原始图片路径
+                            const originalSrc = articleImage.src;
                             
-                            // 触发图片加载完成后的布局调整
-                            articleImage.onload = function() {
-                                // 重新应用随机布局
+                            // 设置超时
+                            const timeout = setTimeout(() => {
+                                reject(new Error('图片加载超时'));
+                            }, 5000);
+                            
+                            // 设置图片加载事件
+                            articleImage.onload = () => {
+                                clearTimeout(timeout);
+                                console.log('图片加载成功:', item.image);
+                                currentImageFile = item.image.split('/').pop();
+                                updateCurrentImageInfo();
+                                
+                                // 图片加载成功后应用随机排版
                                 applyRandomIndents();
+                                resolve();
                             };
-                        } catch (error) {
-                            console.error('加载图片时出错:', error);
-                        }
+                            
+                            articleImage.onerror = () => {
+                                clearTimeout(timeout);
+                                console.error('图片加载失败，尝试替代路径:', item.image);
+                                
+                                // 尝试不同的路径格式
+                                const pathVariations = [
+                                    item.image,
+                                    item.image.startsWith('./') ? item.image.substring(2) : './' + item.image,
+                                    'tu/' + item.image.split('/').pop(),
+                                    './tu/' + item.image.split('/').pop()
+                                ];
+                                
+                                console.log('尝试以下路径变化:', pathVariations);
+                                
+                                // 依次尝试不同的路径
+                                let pathIndex = 1;
+                                const tryNextPath = () => {
+                                    if (pathIndex >= pathVariations.length) {
+                                        articleImage.src = originalSrc;
+                                        reject(new Error('所有路径尝试均失败'));
+                                        return;
+                                    }
+                                    
+                                    const nextPath = pathVariations[pathIndex];
+                                    console.log(`尝试第${pathIndex + 1}个路径:`, nextPath);
+                                    
+                                    articleImage.onload = () => {
+                                        console.log('成功加载图片，使用路径:', nextPath);
+                                        currentImageFile = nextPath.split('/').pop();
+                                        updateCurrentImageInfo();
+                                        resolve();
+                                    };
+                                    
+                                    articleImage.onerror = () => {
+                                        console.log(`路径${pathIndex + 1}失败，尝试下一个`);
+                                        pathIndex++;
+                                        tryNextPath();
+                                    };
+                                    
+                                    articleImage.src = nextPath;
+                                };
+                                
+                                tryNextPath();
+                            };
+                            
+                            // 设置初始图片源
+                            articleImage.src = item.image;
+                        });
+                    } catch (error) {
+                        console.error('图片加载错误:', error);
+                        alert(`第 ${index + 1} 项的图片加载失败：${error.message}\n路径: ${item.image}`);
+                        // 即使图片加载失败也应用随机排版
+                        applyRandomIndents();
                     }
                 } else {
-                    // 如果没有指定图片，应用随机布局
+                    console.warn(`第 ${index + 1} 项没有图片路径`);
+                    // 没有图片时也应用随机排版
                     applyRandomIndents();
                 }
-            }
-
-            // 批量导出功能
-            async function batchExport() {
-                if (!excelData || excelData.length === 0) {
-                    alert('没有数据可导出');
-                    return;
-                }
                 
-                try {
-                    // 显示进度条
-                    progressBarContainer.style.display = 'block';
-                    exportProgress.style.display = 'block';
-                    
-                    // 创建一个ZIP文件
-                    const zip = new JSZip();
-                    
-                    // 遍历所有数据
-                    for (let i = 0; i < excelData.length; i++) {
-                        // 更新进度
-                        progressBar.style.width = `${(i / excelData.length) * 100}%`;
-                        exportProgressDetail.textContent = `正在处理: ${i + 1}/${excelData.length}`;
-                        
-                        // 应用当前数据
-                        selectData(i);
-                        
-                        // 等待布局调整完成
-                        await new Promise(resolve => setTimeout(resolve, 500));
-                        
-                        // 导出当前页面
-                        const canvasContainer = document.getElementById('canvasContainer');
-                        
-                        // 记录原始样式
-                        const originalTransform = canvasContainer.style.transform;
-                        const originalPosition = canvasContainer.style.position;
-                        const originalZoom = canvasContainer.style.zoom;
-                        const originalOverflow = canvasContainer.style.overflow;
-                        
-                        // 重置样式
-                        canvasContainer.style.transform = 'none';
-                        canvasContainer.style.position = 'static';
-                        canvasContainer.style.zoom = '1';
-                        canvasContainer.style.overflow = 'visible';
-                        canvasContainer.style.width = '900px';
-                        canvasContainer.style.height = '1500px';
-                        
-                        // 确保样式正确应用
-                        ensureStyles();
-                        
-                        // 等待图片加载
-                        await waitForImages();
-                        await new Promise(resolve => setTimeout(resolve, 300));
-                        
-                        // 导出
-                        const canvas = await html2canvas(canvasContainer, {
-                            scale: 2,
-                            useCORS: true,
-                            backgroundColor: '#fff',
-                            logging: false,
-                            width: 900,
-                            height: 1500
-                        });
-                        
-                        // 恢复样式
-                        canvasContainer.style.transform = originalTransform;
-                        canvasContainer.style.position = originalPosition;
-                        canvasContainer.style.zoom = originalZoom;
-                        canvasContainer.style.overflow = originalOverflow;
-                        
-                        // 将图片添加到ZIP
-                        const imgData = canvas.toDataURL('image/png').split(',')[1];
-                        zip.file(`排版预览_${i + 1}.png`, imgData, {base64: true});
-                    }
-                    
-                    // 生成ZIP文件
-                    const content = await zip.generateAsync({type: 'blob'});
-                    
-                    // 下载ZIP文件
-                    const link = document.createElement('a');
-                    link.download = '排版预览_批量导出.zip';
-                    link.href = URL.createObjectURL(content);
-                    link.click();
-                    URL.revokeObjectURL(link.href);
-                    
-                    // 隐藏进度条
-                    progressBarContainer.style.display = 'none';
-                    exportProgress.style.display = 'none';
-                    
-                    alert('批量导出完成');
-                } catch (error) {
-                    console.error('批量导出时出错:', error);
-                    alert('批量导出时出错: ' + error.message);
-                    progressBarContainer.style.display = 'none';
-                    exportProgress.style.display = 'none';
-                }
+                // 更新数据项样式
+                document.querySelectorAll('.data-item').forEach((div, i) => {
+                    div.className = 'data-item' + (i === index ? ' active' : '');
+                });
+                
+                updateNavButtons();
             }
 
-            // 文件输入改变事件
+            // 处理Excel文件
+            function handleExcelFile(file) {
+                const reader = new FileReader();
+                reader.onload = function(e) {
+                    try {
+                        const data = new Uint8Array(e.target.result);
+                        const workbook = XLSX.read(data, {type: 'array'});
+                        const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
+                        
+                        // 获取表头
+                        const headers = XLSX.utils.sheet_to_json(firstSheet, { header: 1 })[0];
+                        console.log('Excel表头:', headers);
+
+                        // 验证表头是否包含必要的列
+                        const requiredColumns = ['title', 'paragraph1', 'paragraph2', 'paragraph3', 'image'];
+                        const missingColumns = requiredColumns.filter(col => !headers.includes(col));
+                        
+                        if (missingColumns.length > 0) {
+                            throw new Error(`Excel文件缺少必要的列: ${missingColumns.join(', ')}`);
+                        }
+
+                        // 读取数据，保持原始列名
+                        const jsonData = XLSX.utils.sheet_to_json(firstSheet);
+                        console.log('原始Excel数据:', jsonData);
+
+                        // 标准化数据格式
+                        const processedData = jsonData.map((row, index) => {
+                            const processedRow = {
+                                title: row.title || '',
+                                paragraph1: row.paragraph1 || '',
+                                paragraph2: row.paragraph2 || '',
+                                paragraph3: row.paragraph3 || '',
+                                image: ''
+                            };
+
+                            // 处理图片路径
+                            if (row.image) {
+                                let imagePath = row.image.toString().trim();
+                                // 标准化路径分隔符
+                                imagePath = imagePath.replace(/\\/g, '/');
+                                
+                                // 移除可能的引号
+                                imagePath = imagePath.replace(/['"]/g, '');
+                                
+                                // 确保路径以./开头
+                                if (!imagePath.startsWith('./') && !imagePath.startsWith('/')) {
+                                    imagePath = './' + imagePath;
+                                }
+                                
+                                // 验证图片路径
+                                if (!imagePath.match(/\.(jpg|jpeg|png|gif)$/i)) {
+                                    console.warn(`第${index + 2}行的图片格式可能不正确:`, imagePath);
+                                }
+                                
+                                processedRow.image = imagePath;
+                                console.log(`处理后的图片路径 [行${index + 2}]:`, imagePath);
+                            } else {
+                                console.warn(`第${index + 2}行没有图片路径`);
+                            }
+
+                            return processedRow;
+                        });
+
+                        excelData = processedData;
+                        console.log('处理后的数据:', excelData);
+
+                        // 显示数据统计
+                        const withImages = processedData.filter(row => row.image).length;
+                        alert(`成功加载${processedData.length}条数据，其中${withImages}条包含图片路径。`);
+
+                        displayDataList();
+                        
+                        // 显示导航按钮和批量导出按钮
+                        navButtons.style.display = 'flex';
+                        dataList.style.display = 'block';
+                        batchExportButton.style.display = 'block';
+                        
+                        // 自动加载第一条数据
+                        if(excelData.length > 0) {
+                            loadDataItem(0);
+                        }
+                    } catch (error) {
+                        console.error('处理Excel文件时发生错误:', error);
+                        alert('处理Excel文件时发生错误: ' + error.message);
+                    }
+                };
+                reader.readAsArrayBuffer(file);
+            }
+
+            // 显示数据列表
+            function displayDataList() {
+                dataList.innerHTML = '';
+                excelData.forEach((item, index) => {
+                    const div = document.createElement('div');
+                    div.className = 'data-item';
+                    div.textContent = `${index + 1}. ${item.title}`;
+                    div.onclick = () => loadDataItem(index);
+                    dataList.appendChild(div);
+                });
+                updateNavButtons();
+            }
+
+            // 更新导航按钮状态
+            function updateNavButtons() {
+                prevButton.disabled = currentDataIndex <= 0;
+                nextButton.disabled = currentDataIndex >= excelData.length - 1;
+                currentIndexSpan.textContent = excelData.length > 0 ? 
+                    `${currentDataIndex + 1}/${excelData.length}` : '0/0';
+            }
+
+            // 导航按钮事件
+            prevButton.onclick = () => loadDataItem(currentDataIndex - 1);
+            nextButton.onclick = () => loadDataItem(currentDataIndex + 1);
+
+            // Excel文件上传事件
             excelUploadInput.addEventListener('change', function(e) {
                 const file = e.target.files[0];
-                handleExcelFile(file);
+                if(file) handleExcelFile(file);
             });
 
-            // 拖拽事件处理
+            // Excel拖拽事件
             excelUploadSection.addEventListener('dragover', function(e) {
                 e.preventDefault();
                 this.classList.add('drag-over');
@@ -1878,18 +1819,172 @@
                 e.preventDefault();
                 this.classList.remove('drag-over');
                 const file = e.dataTransfer.files[0];
-                handleExcelFile(file);
+                if(file) handleExcelFile(file);
             });
 
-            // 导航按钮事件
-            prevButton.addEventListener('click', function() {
-                selectData(currentDataIndex - 1);
-            });
+            // 批量导出功能
+            async function batchExport() {
+                if (excelData.length === 0) {
+                    alert('没有可导出的数据');
+                    return;
+                }
 
-            nextButton.addEventListener('click', function() {
-                selectData(currentDataIndex + 1);
-            });
-            
+                try {
+                    // 禁用导出按钮和导航按钮
+                    batchExportButton.disabled = true;
+                    prevButton.disabled = true;
+                    nextButton.disabled = true;
+
+                    // 显示进度条
+                    progressBarContainer.style.display = 'block';
+                    progressBar.style.width = '0%';
+
+                    // 创建zip文件
+                    const zip = new JSZip();
+                    
+                    // 遍历所有数据项
+                    for (let i = 0; i < excelData.length; i++) {
+                        // 更新进度
+                        const progress = ((i + 1) / excelData.length * 100).toFixed(1);
+                        progressBar.style.width = `${progress}%`;
+                        exportProgressDetail.textContent = `正在处理: ${i + 1}/${excelData.length}`;
+
+                        try {
+                            // 加载当前项
+                            await loadDataItem(i);
+
+                            // 等待内容渲染和布局调整
+                            await new Promise(resolve => setTimeout(resolve, 1000));
+
+                            // 临时样式调整
+                            const originalTransform = canvasContainer.style.transform;
+                            const originalPosition = canvasContainer.style.position;
+                            const originalZoom = canvasContainer.style.zoom;
+
+                            canvasContainer.style.transform = 'none';
+                            canvasContainer.style.position = 'relative';
+                            canvasContainer.style.zoom = '1';
+                            canvasContainer.style.width = '900px';
+                            canvasContainer.style.height = '1500px';
+
+                            // 确保所有图片已完全加载
+                            const images = canvasContainer.getElementsByTagName('img');
+                            await Promise.all(Array.from(images).map(img => {
+                                if (img.complete) return Promise.resolve();
+                                return new Promise((resolve, reject) => {
+                                    img.onload = resolve;
+                                    img.onerror = reject;
+                                });
+                            }));
+
+                            // 使用html2canvas捕获内容
+                            const canvas = await html2canvas(canvasContainer, {
+                                scale: 2,
+                                useCORS: true,
+                                backgroundColor: '#ffffff',
+                                logging: true,
+                                allowTaint: true,
+                                foreignObjectRendering: true,
+                                width: 900,
+                                height: 1500,
+                                onclone: function(clonedDoc) {
+                                    const clonedContainer = clonedDoc.querySelector('#canvasContainer');
+                                    if (clonedContainer) {
+                                        clonedContainer.style.transform = 'none';
+                                        clonedContainer.style.position = 'relative';
+                                        clonedContainer.style.zoom = '1';
+                                        clonedContainer.style.width = '900px';
+                                        clonedContainer.style.height = '1500px';
+                                        clonedContainer.style.display = 'block';
+                                        clonedContainer.style.visibility = 'visible';
+                                        clonedContainer.style.opacity = '1';
+
+                                        const content = clonedContainer.querySelector('.content');
+                                        if (content) {
+                                            content.style.width = '800px';
+                                            content.style.height = '1376px';
+                                            content.style.margin = '50px 50px 74px 50px';
+                                        }
+                                    }
+                                }
+                            });
+
+                            // 恢复原始样式
+                            canvasContainer.style.transform = originalTransform;
+                            canvasContainer.style.position = originalPosition;
+                            canvasContainer.style.zoom = originalZoom;
+
+                            // 检查canvas是否有效
+                            if (!canvas || canvas.width === 0 || canvas.height === 0) {
+                                throw new Error('Canvas生成失败或尺寸为0');
+                            }
+
+                            // 转换为blob
+                            const blob = await new Promise((resolve, reject) => {
+                                canvas.toBlob(resolve, 'image/png', 1.0);
+                            });
+
+                            if (!blob || blob.size < 1000) {
+                                throw new Error('生成的图片大小异常小，可能是空白图片');
+                            }
+
+                            // 添加到zip
+                            const fileName = `排版预览_${i + 1}.png`;
+                            zip.file(fileName, blob);
+
+                            console.log(`成功处理第${i + 1}项，图片大小：${blob.size}字节`);
+
+                        } catch (itemError) {
+                            console.error(`处理第${i + 1}项时发生错误:`, itemError);
+                            alert(`处理第${i + 1}项时发生错误，将继续处理下一项`);
+                            continue;
+                        }
+                    }
+
+                    // 检查是否有成功生成的图片
+                    const zipFiles = Object.keys(zip.files);
+                    if (zipFiles.length === 0) {
+                        throw new Error('没有成功生成任何图片');
+                    }
+
+                    // 生成zip文件
+                    exportProgressDetail.textContent = '正在生成ZIP文件...';
+                    const content = await zip.generateAsync({type: 'blob'});
+
+                    // 检查zip文件大小
+                    if (content.size < 1000) {
+                        throw new Error('生成的ZIP文件大小异常小，可能是空文件');
+                    }
+
+                    // 下载zip文件
+                    const link = document.createElement('a');
+                    link.href = URL.createObjectURL(content);
+                    link.download = '排版预览_批量导出.zip';
+                    link.click();
+
+                    // 清理
+                    URL.revokeObjectURL(link.href);
+                    
+                    // 重置UI
+                    progressBarContainer.style.display = 'none';
+                    batchExportButton.disabled = false;
+                    updateNavButtons();
+                    
+                    alert(`批量导出完成！成功导出${zipFiles.length}个文件。`);
+                } catch (error) {
+                    console.error('批量导出时发生错误:', error);
+                    alert('批量导出时发生错误：' + error.message);
+                    
+                    // 重置UI
+                    progressBarContainer.style.display = 'none';
+                    batchExportButton.disabled = false;
+                    updateNavButtons();
+                }
+            }
+
+            // 添加批量导出按钮事件
+            batchExportButton.addEventListener('click', batchExport);
+
             // 添加JSZip库
             const script = document.createElement('script');
             script.src = 'https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js';
@@ -1897,4 +1992,4 @@
         };
     </script>
 </body>
-</html>
+</html> 
