@@ -1,0 +1,1600 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>排版预览</title>
+    <!-- 添加html2canvas库 -->
+    <script src="https://html2canvas.hertzen.com/dist/html2canvas.min.js"></script>
+    <!-- 添加SheetJS库 -->
+    <script src="https://cdn.sheetjs.com/xlsx-0.20.1/package/dist/xlsx.full.min.js"></script>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            display: flex;
+            background-color: #e0e0e0;
+            font-family: "方正可变兰亭黑 GBK", "Microsoft YaHei", "微软雅黑", sans-serif;
+            min-height: 100vh;
+        }
+        
+        /* 左侧控制面板 */
+        .control-panel {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 300px;
+            height: 100vh;
+            background-color: white;
+            box-shadow: 0 0 20px rgba(0, 0, 0, 0.1);
+            z-index: 100;
+            padding: 15px;
+            box-sizing: border-box;
+            overflow-y: auto;
+            font-family: "Microsoft YaHei", "微软雅黑", sans-serif; /* 恢复控制面板原始字体 */
+        }
+        
+        .panel-header {
+            margin-bottom: 15px;
+            border-bottom: 1px solid #eee;
+            padding-bottom: 10px;
+        }
+        
+        .panel-header h2 {
+            margin: 0;
+            font-size: 18px;
+            color: #333;
+        }
+        
+        .control-section {
+            margin-bottom: 15px;
+        }
+        
+        .control-section h3 {
+            margin: 0 0 10px 0;
+            font-size: 16px;
+            color: #555;
+        }
+        
+        .control-section label {
+            display: block;
+            margin-bottom: 5px;
+            font-size: 14px;
+            color: #666;
+        }
+        
+        .control-section textarea {
+            width: 100%;
+            padding: 8px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-size: 14px;
+            resize: vertical;
+            min-height: 100px;
+            margin-bottom: 10px;
+            box-sizing: border-box;
+        }
+        
+        .control-buttons {
+            display: flex;
+            justify-content: space-between;
+            gap: 10px;
+            margin-bottom: 15px;
+        }
+        
+        .control-buttons button {
+            padding: 8px 15px;
+            background-color: #3366FF;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+            flex-grow: 1;
+        }
+        
+        .control-buttons button:hover {
+            background-color: #2a56d9;
+        }
+
+        /* 导出按钮样式 */
+        .export-button {
+            background-color: #28a745 !important;
+            transition: background-color 0.3s ease;
+        }
+
+        .export-button:hover {
+            background-color: #218838 !important;
+        }
+
+        /* 导出进度提示 */
+        .export-progress {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background-color: rgba(0, 0, 0, 0.8);
+            color: white;
+            padding: 20px 40px;
+            border-radius: 8px;
+            display: none;
+            z-index: 1000;
+        }
+        
+        /* 图片上传区域样式 */
+        .image-upload-section {
+            margin-bottom: 15px;
+            padding: 15px;
+            border: 2px dashed #ccc;
+            border-radius: 4px;
+            text-align: center;
+            transition: all 0.3s ease;
+        }
+
+        .image-upload-section.drag-over {
+            background-color: #f0f8ff;
+            border-color: #3366FF;
+        }
+
+        .image-upload-section p {
+            margin: 0;
+            color: #666;
+            font-size: 14px;
+        }
+
+        .image-upload-section input[type="file"] {
+            display: none;
+        }
+
+        .image-upload-section label {
+            display: block;
+            margin: 10px 0;
+            padding: 8px 15px;
+            background-color: #3366FF;
+            color: white;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+        }
+
+        .image-upload-section label:hover {
+            background-color: #2a56d9;
+        }
+
+        .current-image-info {
+            margin-top: 10px;
+            font-size: 12px;
+            color: #666;
+        }
+        
+        /* 右侧预览区域 */
+        .preview-container {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            flex-grow: 1;
+            padding: 20px;
+            margin-left: 300px;
+            height: 100vh;
+            box-sizing: border-box;
+            overflow: hidden; /* Changed from auto to hidden for dragging */
+            position: relative;
+            cursor: grab;
+        }
+        
+        .preview-container.expanded {
+            margin-left: 0;
+        }
+        
+        .preview-container.grabbing {
+            cursor: grabbing;
+        }
+        
+        .canvas-container {
+            position: relative;
+            width: 900px;
+            height: 1500px;
+            background-color: white;
+            box-shadow: 0 0 20px rgba(0, 0, 0, 0.1);
+            overflow: hidden;
+            transform-origin: center;
+            transition: transform 0.1s ease;
+        }
+        
+        .grid {
+            position: absolute;
+            top: 50px;
+            left: 50px;
+            width: 800px; /* 900px - 左右边距100px */
+            height: 1376px; /* 1500px - 上下边距(50+74)px */
+            pointer-events: none;
+            opacity: 0.2;
+            border: 1px solid rgba(100, 100, 100, 0.4);
+        }
+        
+        .grid-lines {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+        }
+        
+        .v-line {
+            position: absolute;
+            top: 0;
+            height: 100%;
+            width: 0.5px;
+            background-color: #CCCCCC;
+        }
+        
+        .h-line {
+            position: absolute;
+            left: 0;
+            width: 100%;
+            height: 0.5px;
+            background-color: #CCCCCC;
+        }
+        
+        /* 内容容器 */
+        .content {
+            position: relative;
+            width: 800px; /* 900px - 左右边距100px */
+            height: 1376px; /* 1500px - 上下边距(50+74)px */
+            margin: 50px 50px 74px 50px; /* 上50、下74、左50、右50 */
+            box-sizing: border-box;
+            overflow: hidden; /* 防止内容溢出 */
+            padding: 0; /* 移除内边距，确保内容与网格完全对齐 */
+        }
+        
+        /* 缩放信息提示 */
+        .zoom-info {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            background-color: rgba(0, 0, 0, 0.7);
+            color: white;
+            padding: 8px 12px;
+            border-radius: 5px;
+            font-size: 14px;
+            opacity: 0;
+            transition: opacity 0.3s ease;
+            pointer-events: none;
+            z-index: 200;
+        }
+        
+        .zoom-info.visible {
+            opacity: 1;
+        }
+        
+        /* 标题样式 - 更新匹配图片 */
+        .title-container {
+            width: 100%;
+            margin-bottom: 60px;
+            max-width: 100%;
+            display: flex;
+            flex-wrap: wrap;
+        }
+        
+        .title-box {
+            display: flex;
+            flex-direction: column;
+            align-items: flex-start; /* 让子元素从左侧开始排列 */
+            width: 100%;
+        }
+        
+        .title-left {
+            display: flex;
+            flex-direction: column;
+            align-items: flex-start; /* 让子元素从左侧开始排列 */
+            width: auto !important; /* 强制宽度跟随内容 */
+        }
+        
+        /* 隐藏右侧设计元素 */
+        .title-right {
+            display: none;
+        }
+        
+        /* 所有标题共有样式 */
+        .title-text {
+            font-size: 72px;
+            font-weight: bold;
+            color: #2a1100;
+            line-height: 1.2;
+            font-family: "方正可变兰亭黑 GBK", "Microsoft YaHei", "微软雅黑", sans-serif;
+            padding: 5px 10px; /* 上下5px，左右10px的间距 */
+            text-align: left;
+            margin: 0; /* 移除底部边距 */
+            box-sizing: border-box;
+            white-space: normal; /* 允许换行 */
+            max-width: 100%; /* 限制最大宽度 */
+            overflow-wrap: break-word; /* 长单词换行 */
+            width: fit-content !important; /* 宽度严格跟随内容 */
+            border-left: 2px solid #c0b7a8;
+            border-right: 2px solid #c0b7a8;
+            border-bottom: none; /* 所有标题下方都没有边框 */
+        }
+        
+        /* 英文标题样式 */
+        .english-title {
+            display: block !important; /* 使用block布局 */
+            border-top: 2px solid #c0b7a8; /* 只有第一行标题有顶部边框 */
+        }
+        
+        /* 中文标题1样式 */
+        .second-title {
+            display: block !important;
+            margin-top: 0; /* 不再需要负margin */
+            border-top: 2px solid #c0b7a8; /* 添加顶部边框 */
+        }
+        
+        /* 中文标题2样式 */
+        .third-title {
+            display: block !important;
+            margin-top: 0; /* 不再需要负margin */
+            border-top: 2px solid #c0b7a8; /* 添加顶部边框 */
+        }
+        
+        /* 右侧设计元素 - 精确匹配图片 */
+        .design-container {
+            display: flex;
+            flex-direction: column;
+            align-items: flex-start;
+            position: relative;
+            top: 0;
+            margin-left: -20px; /* 向左调整设计元素 */
+        }
+        
+        .design-element {
+            border: 2px solid #c0b7a8;
+            width: 140px; /* 增加宽度 */
+            height: 140px; /* 增加高度 */
+            position: relative;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin-left: 0;
+            background-color: white;
+        }
+        
+        .circle-arrow {
+            width: 70px;
+            height: 70px;
+            border: 2px solid #c0b7a8;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            position: absolute;
+            left: 15px;
+        }
+        
+        .arrow {
+            width: 25px;
+            height: 25px;
+            border-right: 2px solid #c0b7a8;
+            border-top: 2px solid #c0b7a8;
+            transform: rotate(45deg);
+        }
+        
+        .diagonal-box {
+            position: absolute;
+            width: 70px;
+            height: 70px;
+            right: 15px;
+        }
+        
+        .square {
+            width: 70px;
+            height: 70px;
+            border: 2px solid #c0b7a8;
+        }
+        
+        .diagonal {
+            position: absolute;
+            width: 99px;
+            height: 2px;
+            background-color: #c0b7a8;
+            top: 35px;
+            left: -15px;
+            transform: rotate(45deg);
+        }
+        
+        /* 正文样式 - 根据图片调整 */
+        .article-text {
+            color: #2a1100;
+            font-size: 32px;
+            line-height: 1.5;
+            text-align: left;
+            width: 100%;
+            box-sizing: border-box;
+            font-family: "方正可变兰亭黑 GBK", "Microsoft YaHei", "微软雅黑", sans-serif;
+            margin-bottom: 20px;
+        }
+        
+        .article-text p {
+            margin: 0 0 40px 0;
+            text-indent: 0; /* 无首行缩进 */
+            transition: margin-left 0.3s ease; /* 添加过渡效果 */
+        }
+        
+        .article-text p:first-child {
+            color: #ef8934; /* 第一段正文为橙色 */
+        }
+        
+        /* 添加第二段缩进样式 - 将由JS动态控制 */
+        .article-text p:nth-child(2) {
+            /* 左边距将由JavaScript控制 */
+        }
+        
+        /* 图片容器和图片设置 */
+        .image-container {
+            max-width: 80%; /* 增加最大宽度限制，允许更大的随机范围 */
+            margin: 0;
+            text-align: left;
+            box-sizing: border-box;
+            overflow: visible; /* 确保溢出内容可见 */
+            position: relative; /* 添加相对定位 */
+            float: right; /* 默认向右浮动 */
+            shape-margin: 20px; /* 图片周围的文字间距 */
+            transition: all 0.3s ease;
+        }
+        
+        .image-caption {
+            font-size: 22px;
+            color: #9a8866;
+            margin-bottom: 5px;
+            text-align: left;
+            font-family: "方正可变兰亭黑 GBK", "Microsoft YaHei", "微软雅黑", sans-serif;
+            transition: all 0.3s ease; /* 添加过渡效果 */
+        }
+        
+        .image-date {
+            font-size: 22px;
+            color: #9a8866;
+            text-align: left;
+            font-family: "方正可变兰亭黑 GBK", "Microsoft YaHei", "微软雅黑", sans-serif;
+            transition: all 0.3s ease; /* 添加过渡效果 */
+        }
+
+        /* 正文区域 */
+        .article {
+            width: 100%;
+            max-width: 100%;
+            padding: 0;
+            box-sizing: border-box;
+            position: relative; /* 添加相对定位 */
+            overflow: visible; /* 确保溢出内容可见 */
+        }
+
+        .article-image {
+            max-width: 100%;
+            width: auto !important; /* 允许图片保持原始比例 */
+            height: auto !important; /* 允许图片保持原始比例 */
+            border: none;
+            object-fit: contain !important; /* 使用contain保持原始比例 */
+            object-position: center !important; /* 始终居中 */
+            box-sizing: border-box;
+            display: block;
+            transition: all 0.3s ease;
+        }
+
+        /* 在头部添加字体定义 */
+        @font-face {
+            font-family: "方正可变兰亭黑 GBK";
+            src: local("方正可变兰亭黑 GBK");
+            font-weight: normal;
+            font-style: normal;
+        }
+
+        /* Excel上传区域样式 */
+        .excel-upload-section {
+            margin-bottom: 15px;
+            padding: 15px;
+            border: 2px dashed #ccc;
+            border-radius: 4px;
+            text-align: center;
+            transition: all 0.3s ease;
+        }
+
+        .excel-upload-section.drag-over {
+            background-color: #f0f8ff;
+            border-color: #3366FF;
+        }
+
+        .excel-upload-section p {
+            margin: 0;
+            color: #666;
+            font-size: 14px;
+        }
+
+        .excel-upload-section input[type="file"] {
+            display: none;
+        }
+
+        .excel-upload-section label {
+            display: block;
+            margin: 10px 0;
+            padding: 8px 15px;
+            background-color: #3366FF;
+            color: white;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+        }
+
+        .excel-upload-section label:hover {
+            background-color: #2a56d9;
+        }
+
+        /* 数据列表样式 */
+        .data-list {
+            margin-top: 10px;
+            max-height: 200px;
+            overflow-y: auto;
+            border: 1px solid #eee;
+            padding: 10px;
+            border-radius: 4px;
+        }
+
+        .data-item {
+            padding: 5px;
+            border-bottom: 1px solid #eee;
+            cursor: pointer;
+        }
+
+        .data-item:hover {
+            background-color: #f5f5f5;
+        }
+
+        .data-item.active {
+            background-color: #e6f3ff;
+        }
+
+        /* 导航按钮样式 */
+        .nav-buttons {
+            display: flex;
+            gap: 10px;
+            margin-top: 10px;
+        }
+
+        .nav-button {
+            padding: 5px 15px;
+            background-color: #3366FF;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+
+        .nav-button:disabled {
+            background-color: #cccccc;
+            cursor: not-allowed;
+        }
+
+        /* 批量导出按钮样式 */
+        .batch-export-button {
+            background-color: #28a745 !important;
+            width: 100%;
+            margin-top: 10px;
+            display: none;
+        }
+
+        .export-progress-detail {
+            margin-top: 5px;
+            font-size: 12px;
+            color: #666;
+        }
+
+        .progress-bar-container {
+            width: 100%;
+            height: 4px;
+            background-color: #f0f0f0;
+            border-radius: 2px;
+            margin-top: 5px;
+            display: none;
+        }
+
+        .progress-bar {
+            width: 0%;
+            height: 100%;
+            background-color: #28a745;
+            border-radius: 2px;
+            transition: width 0.3s ease;
+        }
+    </style>
+</head>
+<body>
+    <!-- 左侧控制面板 -->
+    <div class="control-panel" id="controlPanel">
+        <div class="panel-header">
+            <h2>文本编辑控制面板</h2>
+        </div>
+        
+        <!-- 新增字体粗细控制部分 -->
+        <div class="control-section">
+            <h3>字体粗细控制</h3>
+            <div style="margin-bottom: 10px;">
+                <label for="titleFontWeightRange" style="display: block; margin-bottom: 5px;">标题粗细:</label>
+                <div style="display: flex; align-items: center;">
+                    <input type="range" id="titleFontWeightRange" min="100" max="900" value="500" step="100" style="flex-grow: 1;">
+                    <span id="titleFontWeightValue" style="margin-left: 10px; width: 40px; text-align: right;">500</span>
+                </div>
+            </div>
+            
+            <div>
+                <label for="bodyFontWeightRange" style="display: block; margin-bottom: 5px;">正文粗细:</label>
+                <div style="display: flex; align-items: center;">
+                    <input type="range" id="bodyFontWeightRange" min="100" max="900" value="300" step="100" style="flex-grow: 1;">
+                    <span id="bodyFontWeightValue" style="margin-left: 10px; width: 40px; text-align: right;">300</span>
+                </div>
+            </div>
+        </div>
+        
+        <div class="control-section">
+            <h3>标题编辑</h3>
+            <label for="titleText">三行标题 (每行一个标题)</label>
+            <textarea id="titleText">Part One
+待我苦涩的眼睛
+长满春天</textarea>
+        </div>
+        
+        <div class="control-section">
+            <h3>正文编辑</h3>
+            <label for="paragraph1">第一段</label>
+            <textarea id="paragraph1">有些时候，眼睛也会疲惫。它承载了太多灰色的日子，映入了太多破碎的景象。无论是城市间压抑的钢筋水泥，还是生活中挥之不去的苦涩与无奈，都像一层薄雾，将光亮遮蔽，将希望掩藏。</textarea>
+            
+            <label for="paragraph2">第二段</label>
+            <textarea id="paragraph2">我的眼睛，仿佛已经忘记了如何去看美好。它习惯了凝视沉重的现实，却忽略了窗外那一抹随风摇曳的绿意；它困在追逐未竟的目标之中，却无法捕捉晨光落在花瓣上的细微光芒。眼中的世界，像干涸的土地，亟待一场滋润心灵的春雨。</textarea>
+
+            <label for="paragraph3">第三段</label>
+            <textarea id="paragraph3">但我知道，总有一天，春天会来。她会带着轻柔的风，吹散我眼中的迷雾；会以温暖的阳光，融化覆盖在瞳孔上的寒冰。待我苦涩的眼睛长满春天，那些曾经的黯淡，便会被生机与希望取代。</textarea>
+        </div>
+
+        <!-- 添加图片上传区域 -->
+        <div class="control-section">
+            <h3>图片上传</h3>
+            <div class="image-upload-section" id="imageUploadSection">
+                <p>拖拽图片到此处或点击上传</p>
+                <label for="imageUpload">选择图片</label>
+                <input type="file" id="imageUpload" accept="image/*">
+                <div class="current-image-info" id="currentImageInfo"></div>
+            </div>
+        </div>
+
+        <!-- 添加导出按钮 -->
+        <div class="control-section">
+            <h3>导出预览</h3>
+            <div class="control-buttons">
+                <button class="export-button" id="exportButton">导出为PNG图片</button>
+            </div>
+        </div>
+
+        <!-- 添加Excel上传区域 -->
+        <div class="control-section">
+            <h3>批量数据导入</h3>
+            <div class="excel-upload-section" id="excelUploadSection">
+                <p>拖拽Excel文件到此处或点击上传</p>
+                <label for="excelUpload">选择Excel文件</label>
+                <input type="file" id="excelUpload" accept=".xlsx,.xls">
+                <div class="data-list" id="dataList" style="display: none;">
+                    <!-- 数据项将通过JavaScript动态添加 -->
+                </div>
+                <div class="nav-buttons" style="display: none;">
+                    <button class="nav-button" id="prevButton" disabled>上一条</button>
+                    <span id="currentIndex">0/0</span>
+                    <button class="nav-button" id="nextButton" disabled>下一条</button>
+                    <button class="nav-button batch-export-button" id="batchExportButton">批量导出全部</button>
+                </div>
+                <div class="progress-bar-container" id="progressBarContainer">
+                    <div class="progress-bar" id="progressBar"></div>
+                    <div class="export-progress-detail" id="exportProgressDetail"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 导出进度提示 -->
+    <div class="export-progress" id="exportProgress">
+        正在生成图片...
+    </div>
+
+    <!-- 缩放信息提示 -->
+    <div class="zoom-info" id="zoomInfo">缩放: 100%</div>
+        
+    <!-- 右侧预览区域 -->
+    <div class="preview-container" id="previewContainer">
+        <div class="canvas-container" id="canvasContainer">
+            <!-- 网格背景 -->
+            <div class="grid">
+                <div id="grid-lines" class="grid-lines"></div>
+            </div>
+            
+            <div class="content">
+                <!-- 标题设计 -->
+                <div class="title-container">
+                    <div class="title-box">
+                        <div class="title-left">
+                        <div class="title-text english-title" id="displayEnglishTitle">Part One</div>
+                        <div class="title-text second-title" id="displayChineseTitle1">待我苦涩的眼睛</div>
+                        <div class="title-text third-title" id="displayChineseTitle2">长满春天</div>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- 正文区域 -->
+            <div class="article" id="articleContent">
+                <!-- 图片区域 - 移到文本前面，使其能够被文本环绕 -->
+                <div class="image-container">
+                    <img class="article-image" src="./tu/清明，灵魂弛放.jpg" alt="刘辛夷">
+                </div>
+                
+                    <!-- 正文段落 - 左对齐 -->
+                    <div class="article-text">
+                    <p id="displayParagraph1">有些时候，眼睛也会疲惫。它承载了太多灰色的日子，映入了太多破碎的景象。无论是城市间压抑的钢筋水泥，还是生活中挥之不去的苦涩与无奈，都像一层薄雾，将光亮遮蔽，将希望掩藏。</p>
+                    
+                    <p id="displayParagraph2">我的眼睛，仿佛已经忘记了如何去看美好。它习惯了凝视沉重的现实，却忽略了窗外那一抹随风摇曳的绿意；它困在追逐未竟的目标之中，却无法捕捉晨光落在花瓣上的细微光芒。眼中的世界，像干涸的土地，亟待一场滋润心灵的春雨。</p>
+
+                    <p id="displayParagraph3">但我知道，总有一天，春天会来。她会带着轻柔的风，吹散我眼中的迷雾；会以温暖的阳光，融化覆盖在瞳孔上的寒冰。待我苦涩的眼睛长满春天，那些曾经的黯淡，便会被生机与希望取代。</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // 添加全局变量来跟踪图片位置历史
+        let consecutiveTopCount = 0; // 连续出现在上方的次数
+        let currentImageFile = "清明，灵魂弛放.jpg"; // 添加当前图片文件名变量
+        let excelData = [];
+        let currentDataIndex = -1;
+
+        // 生成静态网格线
+        window.onload = function() {
+            const gridElement = document.getElementById('grid-lines');
+            const GRID_COLS = 25;
+            const GRID_ROWS = 43;
+            
+            // 计算版心尺寸
+            const gridWidth = 900 - 100; // 总宽 - 左右边距(50+50)
+            const gridHeight = 1500 - 124; // 总高 - 上下边距(50+74)
+            
+            // 计算单元格尺寸
+            const cellWidth = gridWidth / GRID_COLS;
+            const cellHeight = gridHeight / GRID_ROWS;
+            
+            // 绘制垂直线
+            for (let i = 0; i <= GRID_COLS; i++) {
+                const x = i * cellWidth;
+                const vLine = document.createElement('div');
+                vLine.className = 'v-line';
+                vLine.style.left = x + 'px';
+                gridElement.appendChild(vLine);
+            }
+            
+            // 绘制水平线
+            for (let i = 0; i <= GRID_ROWS; i++) {
+                const y = i * cellHeight;
+                const hLine = document.createElement('div');
+                hLine.className = 'h-line';
+                hLine.style.top = y + 'px';
+                gridElement.appendChild(hLine);
+            }
+            
+            // 控制面板功能
+            const controlPanel = document.getElementById('controlPanel');
+            const previewContainer = document.getElementById('previewContainer');
+            
+            // 输入字段
+            const titleText = document.getElementById('titleText');
+            const paragraph1 = document.getElementById('paragraph1');
+            const paragraph2 = document.getElementById('paragraph2');
+            const paragraph3 = document.getElementById('paragraph3');
+            
+            // 显示元素
+            const displayEnglishTitle = document.getElementById('displayEnglishTitle');
+            const displayChineseTitle1 = document.getElementById('displayChineseTitle1');
+            const displayChineseTitle2 = document.getElementById('displayChineseTitle2');
+            const displayParagraph1 = document.getElementById('displayParagraph1');
+            const displayParagraph2 = document.getElementById('displayParagraph2');
+            const displayParagraph3 = document.getElementById('displayParagraph3');
+            const titleContainer = document.querySelector('.title-container');
+            const articleContent = document.getElementById('articleContent');
+            const canvasContainer = document.getElementById('canvasContainer');
+            const zoomInfo = document.getElementById('zoomInfo');
+            
+            // 字体粗细控制
+            const titleFontWeightRange = document.getElementById('titleFontWeightRange');
+            const titleFontWeightValue = document.getElementById('titleFontWeightValue');
+            const bodyFontWeightRange = document.getElementById('bodyFontWeightRange');
+            const bodyFontWeightValue = document.getElementById('bodyFontWeightValue');
+            
+            // 缩放和平移状态
+            let scale = 1;
+            let offsetX = 0;
+            let offsetY = 0;
+            let isDragging = false;
+            let dragStartX = 0;
+            let dragStartY = 0;
+            
+            // 保存原始内容以便重置
+            const originalContent = {
+                titleText: titleText.value,
+                paragraph1: displayParagraph1.textContent,
+                paragraph2: displayParagraph2.textContent,
+                paragraph3: displayParagraph3.textContent
+            };
+            
+            // 记录原始标题容器高度
+            const originalTitleHeight = titleContainer.offsetHeight;
+            
+            // 滚轮缩放功能
+            previewContainer.addEventListener('wheel', function(e) {
+                e.preventDefault();
+                
+                // 计算鼠标相对于预览容器的位置
+                const rect = previewContainer.getBoundingClientRect();
+                const mouseX = e.clientX - rect.left;
+                const mouseY = e.clientY - rect.top;
+                
+                // 计算鼠标相对于缩放中心的偏移
+                const oldScale = scale;
+                
+                // 根据滚轮方向调整缩放比例
+                if (e.deltaY < 0) {
+                    scale = Math.min(scale * 1.1, 3); // 放大，最大3倍
+                } else {
+                    scale = Math.max(scale / 1.1, 0.3); // 缩小，最小0.3倍
+                }
+                
+                // 更新变换
+                updateTransform();
+                
+                // 显示缩放信息
+                showZoomInfo();
+            });
+            
+            // 拖拽功能
+            previewContainer.addEventListener('mousedown', function(e) {
+                if (e.button === 0) { // 左键点击
+                    isDragging = true;
+                    dragStartX = e.clientX - offsetX;
+                    dragStartY = e.clientY - offsetY;
+                    previewContainer.classList.add('grabbing');
+                }
+            });
+            
+            window.addEventListener('mousemove', function(e) {
+                if (isDragging) {
+                    offsetX = e.clientX - dragStartX;
+                    offsetY = e.clientY - dragStartY;
+                    updateTransform();
+                }
+            });
+            
+            window.addEventListener('mouseup', function() {
+                if (isDragging) {
+                    isDragging = false;
+                    previewContainer.classList.remove('grabbing');
+                }
+            });
+            
+            // 双击重置缩放和位置
+            previewContainer.addEventListener('dblclick', function() {
+                scale = 1;
+                offsetX = 0;
+                offsetY = 0;
+                updateTransform();
+                showZoomInfo();
+            });
+            
+            // 更新变换
+            function updateTransform() {
+                canvasContainer.style.transform = `translate(${offsetX}px, ${offsetY}px) scale(${scale})`;
+            }
+            
+            // 显示缩放信息
+            function showZoomInfo() {
+                zoomInfo.textContent = `缩放: ${Math.round(scale * 100)}%`;
+                zoomInfo.classList.add('visible');
+                
+                // 2秒后隐藏
+                clearTimeout(window.zoomInfoTimeout);
+                window.zoomInfoTimeout = setTimeout(function() {
+                    zoomInfo.classList.remove('visible');
+                }, 2000);
+            }
+            
+            // 应用标题更改并调整布局
+            function applyTitleChanges() {
+                const lines = titleText.value.split('\n');
+                
+                if (lines.length >= 1) {
+                    displayEnglishTitle.textContent = lines[0] || " ";
+                    // 确保空标题也能保持结构
+                    if (!lines[0].trim()) {
+                        displayEnglishTitle.innerHTML = "&nbsp;";
+                    }
+                }
+                
+                if (lines.length >= 2) {
+                    displayChineseTitle1.textContent = lines[1] || " ";
+                    if (!lines[1].trim()) {
+                        displayChineseTitle1.innerHTML = "&nbsp;";
+                    }
+                }
+                
+                if (lines.length >= 3) {
+                    displayChineseTitle2.textContent = lines[2] || " ";
+                    if (!lines[2].trim()) {
+                        displayChineseTitle2.innerHTML = "&nbsp;";
+                    }
+                }
+                
+                // 调整标题样式和内容流动
+                adjustLayout();
+            }
+            
+            // 动态调整布局
+            function adjustLayout() {
+                // 清除之前的行内样式
+                displayEnglishTitle.style.width = '';
+                displayChineseTitle1.style.width = '';
+                displayChineseTitle2.style.width = '';
+                articleContent.style.marginTop = '';
+                
+                // 刷新DOM以获取正确尺寸
+                window.requestAnimationFrame(function() {
+                    // 不再同步边框宽度，让每个标题的宽度自然跟随其内容
+                    
+                    window.requestAnimationFrame(function() {
+                        // 获取标题容器的新高度
+                        const currentTitleHeight = titleContainer.offsetHeight;
+                        
+                        // 计算高度差值
+                        const heightDifference = currentTitleHeight - originalTitleHeight;
+                        
+                        // 如果标题变高了，调整正文位置
+                        if (heightDifference > 0) {
+                            articleContent.style.marginTop = heightDifference + 'px';
+                        }
+                    });
+                });
+            }
+            
+            // 实时预览标题
+            titleText.addEventListener('input', applyTitleChanges);
+            
+            // 实时预览段落
+            paragraph1.addEventListener('input', function() {
+                displayParagraph1.textContent = this.value;
+            });
+            
+            paragraph2.addEventListener('input', function() {
+                displayParagraph2.textContent = this.value;
+            });
+            
+            paragraph3.addEventListener('input', function() {
+                displayParagraph3.textContent = this.value;
+            });
+            
+            // 字体粗细控制 - 标题
+            titleFontWeightRange.addEventListener('input', function() {
+                const weight = this.value;
+                titleFontWeightValue.textContent = weight;
+                
+                // 更新所有标题元素的字体粗细
+                const titleElements = document.querySelectorAll('.title-text');
+                titleElements.forEach(element => {
+                    element.style.fontWeight = weight;
+                });
+            });
+            
+            // 字体粗细控制 - 正文
+            bodyFontWeightRange.addEventListener('input', function() {
+                const weight = this.value;
+                bodyFontWeightValue.textContent = weight;
+                
+                // 更新所有正文和图片说明元素的字体粗细
+                const bodyElements = document.querySelectorAll('.article-text p, .image-caption, .image-date');
+                bodyElements.forEach(element => {
+                    element.style.fontWeight = weight;
+                });
+            });
+            
+            // 初始应用字体粗细设置
+            titleFontWeightRange.dispatchEvent(new Event('input'));
+            bodyFontWeightRange.dispatchEvent(new Event('input'));
+            
+            // 初始调整
+            adjustLayout();
+            
+            // 图片上传相关功能
+            const imageUploadSection = document.getElementById('imageUploadSection');
+            const imageUploadInput = document.getElementById('imageUpload');
+            const currentImageInfo = document.getElementById('currentImageInfo');
+
+            // 更新当前图片信息显示
+            function updateCurrentImageInfo() {
+                currentImageInfo.textContent = `当前图片: ${currentImageFile}`;
+            }
+
+            // 处理图片文件
+            function handleImageFile(file) {
+                if (file && file.type.startsWith('image/')) {
+                    const reader = new FileReader();
+                    reader.onload = function(e) {
+                        const articleImage = document.querySelector('.article-image');
+                        articleImage.src = e.target.result;
+                        currentImageFile = file.name;
+                        updateCurrentImageInfo();
+                        
+                        // 触发图片加载完成后的布局调整
+                        articleImage.onload();
+                    };
+                    reader.readAsDataURL(file);
+                } else {
+                    alert('请上传有效的图片文件');
+                }
+            }
+
+            // 文件输入改变事件
+            imageUploadInput.addEventListener('change', function(e) {
+                const file = e.target.files[0];
+                handleImageFile(file);
+            });
+
+            // 拖拽事件处理
+            imageUploadSection.addEventListener('dragover', function(e) {
+                e.preventDefault();
+                this.classList.add('drag-over');
+            });
+
+            imageUploadSection.addEventListener('dragleave', function(e) {
+                e.preventDefault();
+                this.classList.remove('drag-over');
+            });
+
+            imageUploadSection.addEventListener('drop', function(e) {
+                e.preventDefault();
+                this.classList.remove('drag-over');
+                const file = e.dataTransfer.files[0];
+                handleImageFile(file);
+            });
+
+            // 初始显示当前图片信息
+            updateCurrentImageInfo();
+            
+            // 随机缩进函数
+            function applyRandomIndents() {
+                // 获取网格单元格宽度
+                const gridElement = document.getElementById('grid-lines');
+                const gridWidth = 800; // 版心宽度
+                const gridHeight = 1376; // 版心高度 - 留出一些安全边距
+                const GRID_COLS = 25;
+                const GRID_ROWS = 43;
+                const cellWidth = gridWidth / GRID_COLS;
+                const cellHeight = gridHeight / GRID_ROWS;
+                
+                // 计算版心面积和最小图片面积要求(10%)
+                const totalContentArea = gridWidth * gridHeight;
+                const minImageArea = totalContentArea * 0.1; // 图片面积不得低于版心的10%
+                
+                // 计算版心一半的网格单位数（左侧二分之一）
+                const halfGridCols = Math.floor(GRID_COLS / 2); // 12个网格单位
+                
+                // 获取所有段落
+                const paragraphs = document.querySelectorAll('.article-text p');
+                
+                // 获取图片容器和图片
+                const imageContainer = document.querySelector('.image-container');
+                const articleImage = document.querySelector('.article-image');
+                const articleText = document.querySelector('.article-text');
+                const articleContent = document.getElementById('articleContent');
+                
+                // 首先，让我们重置一些先前可能被修改的样式
+                paragraphs.forEach(p => {
+                    p.style.fontSize = ''; // 重置可能被缩小的字体大小
+                    p.style.lineHeight = '';
+                    p.style.marginBottom = '';
+                });
+                
+                articleContent.style.maxHeight = '';
+                
+                // 随机选择图片 - 改为tu文件夹
+                const imageFiles = [
+                    "清明，灵魂弛放.jpg",
+                    "清明，灵魂弛放 2.jpg",
+                    "清明，灵魂弛放 3.jpg",
+                    "清明，灵魂弛放 4.jpg",
+                    "清明，灵魂弛放 5.jpg",
+                    "清明，灵魂弛放 6.jpg"
+                ];
+                
+                // 随机选择一张图片
+                const randomImageIndex = Math.floor(Math.random() * imageFiles.length);
+                const randomImageFile = imageFiles[randomImageIndex];
+                
+                // 重置容器样式
+                imageContainer.style.width = '';
+                imageContainer.style.maxWidth = '';
+                imageContainer.style.height = '';
+                imageContainer.style.maxHeight = '';
+                
+                // 设置新的图片源，并设置加载事件
+                articleImage.onload = function() {
+                    // 图片加载完成后，获取原始宽高比
+                    const naturalWidth = this.naturalWidth;
+                    const naturalHeight = this.naturalHeight;
+                    const aspectRatio = naturalWidth / naturalHeight;
+                    
+                    console.log(`原始图片尺寸: ${naturalWidth}x${naturalHeight}, 宽高比: ${aspectRatio.toFixed(2)}`);
+                    
+                    // 随机决定图片浮动方向
+                    const floatDirection = Math.random() > 0.5 ? 'right' : 'left';
+                    imageContainer.style.float = floatDirection;
+                    
+                    // 确保宽度满足要求：网格宽度的整数倍，且最小为5个网格宽度
+                    const MIN_WIDTH_UNITS = 5; // 最小宽度为5个网格单位
+                    const MAX_WIDTH_UNITS = Math.floor(GRID_COLS * 0.6); // 最大宽度为版心宽度的60%，转换为网格单位
+                    
+                    // 随机选择宽度单位数（5到MAX_WIDTH_UNITS之间的整数）
+                    const widthUnits = Math.floor(Math.random() * (MAX_WIDTH_UNITS - MIN_WIDTH_UNITS + 1)) + MIN_WIDTH_UNITS;
+                    const imageWidth = widthUnits * cellWidth;
+                    
+                    // 根据原始宽高比计算高度，并调整为网格单位的整数倍
+                    let heightInPixels = imageWidth / aspectRatio;
+                    let heightUnits = Math.round(heightInPixels / cellHeight);
+                    
+                    // 确保高度至少为1个网格单位
+                    heightUnits = Math.max(1, heightUnits);
+                    const imageHeight = heightUnits * cellHeight;
+                    
+                    // 计算实际图片面积
+                    const actualImageArea = imageWidth * imageHeight;
+                    const areaPercentage = (actualImageArea / totalContentArea * 100).toFixed(2);
+                    
+                    // 如果面积小于最小要求，进行等比例放大
+                    if (actualImageArea < minImageArea) {
+                        // 计算需要的缩放因子
+                        const scaleFactor = Math.sqrt(minImageArea / actualImageArea);
+                        
+                        // 应用缩放因子，调整为网格单位的整数倍
+                        const scaledWidthUnits = Math.ceil(widthUnits * scaleFactor);
+                        const newWidth = scaledWidthUnits * cellWidth;
+                        
+                        const scaledHeightUnits = Math.ceil(heightUnits * scaleFactor);
+                        const newHeight = scaledHeightUnits * cellHeight;
+                        
+                        console.log(`图片面积不足，需要放大: ${areaPercentage}% -> ${((newWidth * newHeight) / totalContentArea * 100).toFixed(2)}%`);
+                        
+                        // 更新尺寸
+                        imageContainer.style.width = `${newWidth}px`;
+                        imageContainer.style.maxWidth = `${newWidth}px`;
+                        
+                        // 由于使用了object-fit: contain，容器高度需要明确设置
+                        imageContainer.style.height = `${newHeight}px`;
+                        imageContainer.style.maxHeight = `${newHeight}px`;
+                        
+                        console.log(`调整后图片尺寸: ${newWidth}x${newHeight}px`);
+                    } else {
+                        // 如果面积已经满足要求，直接使用计算出的尺寸
+                        imageContainer.style.width = `${imageWidth}px`;
+                        imageContainer.style.maxWidth = `${imageWidth}px`;
+                        
+                        // 由于使用了object-fit: contain，容器高度需要明确设置
+                        imageContainer.style.height = `${imageHeight}px`;
+                        imageContainer.style.maxHeight = `${imageHeight}px`;
+                        
+                        console.log(`图片尺寸: ${imageWidth}x${imageHeight}px, 面积: ${actualImageArea}px² (版心的${areaPercentage}%)`);
+                    }
+                    
+                    // 根据连续上方次数决定位置
+                    let verticalPosition;
+                    if (consecutiveTopCount >= 2) {
+                        // 强制出现在底部
+                        verticalPosition = 'bottom';
+                        consecutiveTopCount = 0; // 重置计数器
+                        console.log('已连续两次上方，强制置于底部');
+                    } else {
+                        // 随机选择位置，但记录上方次数
+                        const positions = ['top', 'middle', 'bottom'];
+                        verticalPosition = positions[Math.floor(Math.random() * positions.length)];
+                        
+                        if (verticalPosition === 'top' || verticalPosition === 'middle') {
+                            consecutiveTopCount++;
+                            console.log(`图片位于上方，连续次数：${consecutiveTopCount}`);
+                        } else {
+                            consecutiveTopCount = 0; // 出现在底部时重置计数器
+                            console.log('图片位于底部，重置计数器');
+                        }
+                    }
+
+                    // 根据垂直位置设置上边距
+                    if (verticalPosition === 'top') {
+                        imageContainer.style.marginTop = '0';
+                    } else if (verticalPosition === 'middle') {
+                        // 限制中间位置的最大上边距
+                        imageContainer.style.marginTop = `${Math.floor(Math.random() * 100) + 80}px`; // 80-180px
+                    } else { // bottom
+                        // 让图片底部对齐正文底部
+                        const textHeight = articleText.offsetHeight;
+                        const containerHeight = parseInt(imageContainer.style.height);
+                        const maxMarginTop = Math.max(0, textHeight - containerHeight);
+                        imageContainer.style.marginTop = `${maxMarginTop}px`;
+                    }
+
+                    // 根据浮动方向设置边距，确保图片和文本有一定间距
+                    if (floatDirection === 'left') {
+                        imageContainer.style.marginRight = '30px';
+                        imageContainer.style.marginLeft = '0';
+                    } else {
+                        imageContainer.style.marginLeft = '30px';
+                        imageContainer.style.marginRight = '0';
+                    }
+
+                    // 确保图片主题始终在中心
+                    articleImage.style.objectPosition = 'center';
+
+                    // 为段落应用随机缩进
+                    applyParagraphIndents(paragraphs, floatDirection, verticalPosition, imageContainer, cellWidth, halfGridCols);
+
+                    // 多次检查，确保布局稳定
+                    setTimeout(() => checkAndFixContentOverflow(gridHeight, articleContent, imageContainer, 1), 100);
+                    setTimeout(() => checkAndFixContentOverflow(gridHeight, articleContent, imageContainer, 2), 300);
+                    setTimeout(() => checkAndFixContentOverflow(gridHeight, articleContent, imageContainer, 3), 500);
+                };
+                
+                // 设置图片源，触发onload事件
+                articleImage.src = `./tu/${randomImageFile}`;
+                articleImage.alt = randomImageFile.split('.')[0];
+            }
+            
+            // 新函数：为段落应用随机缩进
+            function applyParagraphIndents(paragraphs, floatDirection, verticalPosition, imageContainer, cellWidth, halfGridCols) {
+                // 获取图片容器宽度（以网格单位计）
+                const containerWidthPx = parseInt(imageContainer.style.width);
+                const widthUnits = Math.round(containerWidthPx / cellWidth);
+                
+                paragraphs.forEach((paragraph, index) => {
+                    let randomGridUnits;
+                    
+                    // 对最后一段特殊处理，给它更小的缩进以防止溢出
+                    if (index === paragraphs.length - 1) {
+                        randomGridUnits = Math.floor(Math.random() * 3); // 最后一段最多缩进2个网格单位
+                    }
+                    // 如果图片浮动在左边，第一段可能需要避让
+                    else if (floatDirection === 'left' && index === 0 && verticalPosition === 'top') {
+                        randomGridUnits = widthUnits + 1; // 使用图片宽度加1
+                    } else if (index === 0) {
+                        randomGridUnits = Math.floor(Math.random() * 4); // 0-3
+                    } else if (index === 1) {
+                        randomGridUnits = Math.floor(Math.random() * 4) + 3; // 3-6
+                    } else {
+                        randomGridUnits = Math.floor(Math.random() * 5); // 0-4，减少缩进范围
+                    }
+                    
+                    // 确保缩进不超过版心一半 - 1个单位的安全边距
+                    randomGridUnits = Math.min(randomGridUnits, halfGridCols - 2);
+                    
+                    const marginLeft = randomGridUnits * cellWidth;
+                    
+                    // 应用整段缩进
+                    paragraph.style.marginLeft = `${marginLeft}px`;
+                    paragraph.style.textIndent = '0'; // 确保没有首行缩进
+                    
+                    // 对最后一段进行特殊处理，确保其完整显示
+                    if (index === paragraphs.length - 1) {
+                        paragraph.style.marginBottom = '0'; // 移除最后一段的底部边距
+                    } else {
+                        paragraph.style.marginBottom = '30px'; // 减少段落间距
+                    }
+                });
+            }
+            
+            // 检查并修复内容溢出问题 - 增强版
+            function checkAndFixContentOverflow(gridHeight, articleContent, imageContainer, attemptNumber) {
+                // 获取版心容器和相对位置
+                const contentElement = document.querySelector('.content');
+                const contentRect = contentElement.getBoundingClientRect();
+                const contentTop = contentRect.top;
+                
+                // 获取文章容器尺寸和位置
+                const articleRect = articleContent.getBoundingClientRect();
+                const articleBottom = articleRect.bottom - contentTop;
+                
+                // 获取段落和图片
+                const paragraphs = document.querySelectorAll('.article-text p');
+                const articleImage = document.querySelector('.article-image');
+                
+                // 检查是否溢出版心底部
+                if (articleBottom > gridHeight) {
+                    console.log(`检测到内容溢出，正在调整...（第${attemptNumber}次尝试）`);
+                    
+                    // 计算溢出量
+                    const overflowAmount = articleBottom - gridHeight;
+                    console.log(`溢出量: ${overflowAmount}px`);
+                    
+                    // 获取图片当前位置和尺寸
+                    const imageRect = imageContainer.getBoundingClientRect();
+                    const imageTop = imageRect.top - contentTop;
+                    const imageHeight = imageRect.height;
+                    const imageBottom = imageTop + imageHeight;
+                    
+                    // 获取最后一段的位置
+                    const lastParagraph = paragraphs[paragraphs.length - 1];
+                    const lastParagraphRect = lastParagraph.getBoundingClientRect();
+                    const lastParagraphBottom = lastParagraphRect.bottom - contentTop;
+                    
+                    // 策略优先级，根据尝试次数调整策略
+                    if (attemptNumber === 1) {
+                        // 第一次尝试：温和调整，主要是移动和轻微缩小图片
+                        
+                        // 策略1: 如果图片在底部，尝试向上移动图片
+                        if (imageTop > gridHeight / 2) {
+                            const currentMarginTop = parseInt(imageContainer.style.marginTop || '0');
+                            const newMarginTop = Math.max(0, currentMarginTop - overflowAmount - 20);
+                            imageContainer.style.marginTop = `${newMarginTop}px`;
+                            console.log(`策略1：向上移动图片 ${currentMarginTop}px → ${newMarginTop}px`);
+                        }
+                        // 策略2: 如果图片太大，适度缩小图片
+                        else if (imageHeight > gridHeight / 4) {
+                            const currentWidth = parseInt(imageContainer.style.width);
+                            const newWidth = Math.max(currentWidth * 0.9, currentWidth - 50);
+                            imageContainer.style.width = `${newWidth}px`;
+                            imageContainer.style.maxWidth = `${newWidth}px`;
+                            console.log(`策略2：缩小图片宽度 ${currentWidth}px → ${newWidth}px`);
+                        }
+                        
+                        // 策略3: 减少段落间距
+                        paragraphs.forEach((p, index) => {
+                            if (index < paragraphs.length - 1) { // 不是最后一段
+                                p.style.marginBottom = '20px'; // 减少段落间距
+                            }
+                        });
+                    }
+                    else if (attemptNumber === 2) {
+                        // 第二次尝试：更激进的调整，包括更多缩小和重新定位
+                        
+                        // 策略4: 进一步缩小图片
+                        const currentWidth = parseInt(imageContainer.style.width);
+                        const newWidth = currentWidth * 0.8; // 缩小20%
+                        imageContainer.style.width = `${newWidth}px`;
+                        imageContainer.style.maxWidth = `${newWidth}px`;
+                        console.log(`策略4：进一步缩小图片宽度 ${currentWidth}px → ${newWidth}px`);
+                        
+                        // 策略5: 如果图片在左侧且导致最后一段文本溢出，将图片移至右侧
+                        if (imageContainer.style.float === 'left' && lastParagraphBottom > gridHeight) {
+                            imageContainer.style.float = 'right';
+                            console.log("策略5：将图片从左侧移至右侧");
+                            
+                            // 重新调整最后一段缩进
+                            lastParagraph.style.marginLeft = '0';
+                        }
+                        
+                        // 策略6: 减少所有段落的行高
+                        paragraphs.forEach(p => {
+                            p.style.lineHeight = '1.4';
+                            console.log("策略6：减少段落行高至1.4");
+                        });
+                    }
+                    else if (attemptNumber === 3) {
+                        // 第三次尝试：最激进的措施，确保内容显示，可能牺牲部分美观性
+                        
+                        // 策略7: 极度缩小图片
+                        const currentWidth = parseInt(imageContainer.style.width);
+                        // 确保图片宽度仍然是网格单位的整数倍
+                        const cellWidth = 800 / 25; // 版心宽度除以列数
+                        const newWidthUnits = Math.max(5, Math.floor(currentWidth * 0.7 / cellWidth)); // 至少保留5个单位宽度
+                        const newWidth = newWidthUnits * cellWidth;
+                        
+                        // 同样调整高度保持为网格单位的整数倍
+                        const currentHeight = parseInt(imageContainer.style.height);
+                        const cellHeight = 1376 / 43; // 版心高度除以行数
+                        const newHeightUnits = Math.max(3, Math.floor(currentHeight * 0.7 / cellHeight)); // 至少保留3个单位高度
+                        const newHeight = newHeightUnits * cellHeight;
+                        
+                        imageContainer.style.width = `${newWidth}px`;
+                        imageContainer.style.maxWidth = `${newWidth}px`;
+                        imageContainer.style.height = `${newHeight}px`;
+                        imageContainer.style.maxHeight = `${newHeight}px`;
+                        
+                        // 策略8: 移动图片到最佳位置
+                        if (imageBottom > gridHeight * 0.9) {
+                            // 如果图片底部接近版心底部，将其移到顶部
+                            imageContainer.style.marginTop = '0';
+                            console.log("策略8：将图片移至顶部");
+                        }
+                        
+                        // 策略9: 微缩小字体大小
+                        paragraphs.forEach(p => {
+                            p.style.fontSize = '30px'; // 从32px缩小到30px
+                            p.style.lineHeight = '1.3';
+                            console.log("策略9：缩小字体至30px，行高至1.3");
+                        });
+                        
+                        // 策略10: 紧急情况 - 强制设置高度和溢出滚动
+                        if (lastParagraphBottom > gridHeight) {
+                            // 确保最后一段至少显示80%
+                            const lastLineHeight = parseInt(getComputedStyle(lastParagraph).lineHeight);
+                            const visibleHeight = gridHeight - lastParagraphRect.top + contentTop;
+                            
+                            if (visibleHeight < lastLineHeight) {
+                                // 如果连一行都显示不完整，调整布局确保至少显示一行
+                                lastParagraph.style.marginTop = `-${lastLineHeight}px`;
+                                console.log("策略10：紧急调整最后一段上边距");
+                            }
+                        }
+                    }
+                } else {
+                    console.log(`内容已在版心范围内（第${attemptNumber}次检查）`);
+                }
+            }
+            
+            // 添加鼠标点击事件
+            document.querySelector('.article-text').addEventListener('click', applyRandomIndents);
+            
+            // 初始应用随机缩进
+            applyRandomIndents();
+            
+            // 窗口大小变化时重新调整
+            window.addEventListener('resize', adjustLayout);
+
+            // 导出功能
+            const exportButton = document.getElementById('exportButton');
+            const exportProgress = document.getElementById('exportProgress');
+
+            // 添加等待函数
+            function waitForImages() {
+                return new Promise((resolve) => {
+                    const images = document.getElementsByTagName('img');
+                    let loadedImages = 0;
+                    
+                    if (images.length === 0) {
+                        resolve();
+                        return;
+                    }
+                    
+                    for (let img of images) {
+                        if (img.complete) {
+                            loadedImages++;
+                        } else {
+                            img.onload = () => {
+                                loadedImages++;
+                                if (loadedImages === images.length) {
+                                    resolve();
+                                }
+                            };
+                            img.onerror = () => {
+                                loadedImages++;
+                                if (loadedImages === images.length) {
+                                    resolve();
+                                }
+                            };
+                        }
+                    }
+                    
+                    if (loadedImages === images.length) {
+                        resolve();
+                    }
+                });
+            }
+
+            // 添加样式应用函数
+            function ensureStyles() {
+                const canvasContainer = document.getElementById('canvasContainer');
+                const content = canvasContainer.querySelector('.content');
+                const titleTexts = canvasContainer.querySelectorAll('.title-text');
+                const paragraphs = canvasContainer.querySelectorAll('.article-text p');
+                
+                // 确保容器样式
+                canvasContainer.style.backgroundColor = '#ffffff';
+                canvasContainer.style.display = 'block';
+                canvasContainer.style.visibility = 'visible';
+                canvasContainer.style.opacity = '1';
+                
+                // 确保内容区域样式
+                if (content) {
+                    content.style.backgroundColor = '#ffffff';
+                    content.style.display = 'block';
+                    content.style.visibility = 'visible';
+                    content.style.opacity = '1';
+                }
+                
+                // 确保标题样式
+                titleTexts.forEach(title => {
+                    title.style.color = '#2a1100';
+                    title.style.opacity = '1';
+                    title.style.visibility = 'visible';
+                    title.style.display = 'block';
+                });
+                
+                // 确保段落样式
+                paragraphs.forEach(p => {
+                    p.style.color = '#2a1100';
+                    p.style.opacity = '1';
+                    p.style.visibility = 'visible';
+                    p.style.display = 'block';
+                });
+            }
+
+            // 单个导出功能
+            exportButton.addEventListener('click', async function() {
+                try {
+                    exportProgress.style.display = 'block';
+                    const canvasContainer = document.getElementById('canvasContainer');
+
+                    // 记录原始样式
+                    const originalTransform = canvasContainer.style.transform;
+                    const originalPosition = canvasContainer.style.position;
+                    const originalZoom = canvasContainer.style.zoom;
+                    const originalOverflow = canvasContainer.style.overflow;
+                    const originalFont = canvasContainer.style.fontFamily;
+
+                    // 重置样式
+                    canvasContainer.style.transform = 'none';
+                    canvasContainer.style.position = 'static';
+                    canvasContainer.style.zoom = '1';
+                    canvasContainer.style.overflow = 'visible';
+                    canvasContainer.style.width = '900px';
+                    canvasContainer.style.height = '1500px';
+                    canvasContainer.style.backgroundColor = '#fff';
+                    canvasContainer.style.fontFamily = 'Arial, sans-serif';
+
+                    // 内容区字体也临时设为Arial
+                    const content = canvasContainer.querySelector('.content');
+                    const oldContentFont = content.style.fontFamily;
+                    content.style.fontFamily = 'Arial, sans-serif';
+
+                    // 等待图片加载
+                    await waitForImages();
+                    await new Promise(resolve => setTimeout(resolve, 500));
+
+                    // 导出
+                    const canvas = await html2canvas(canvasContainer, {
+                        scale: 2,
+                        useCORS: true,
+                        backgroundColor: '#fff',
+                        logging: true,
+                        width: 900,
+                        height: 1500
+                    });
+
+                    // 恢复样式
+                    canvasContainer.style.transform = originalTransform;
+                    canvasContainer.style.position = originalPosition;
+                    canvasContainer.style.zoom = originalZoom;
+                    canvasContainer.style.overflow = originalOverflow;
+                    canvasContainer.style.fontFamily = originalFont;
+                    if(content) content.style.fontFamily = oldContentFont;
+
+                    // 下载
+                    canvas.toBlob(function(blob) {
+                        if (!blob || blob.size < 1000) {
+                            throw new Error('生成的图片大小异常小，可能是空白图片');
+                        }
+                        const link = document.createElement('a');
+                        link.download = '排版预览.png';
+                        link.href = URL.createObjectURL(blob);
+                        link.click();
+                        URL.revokeObjectURL(link.href);
+                    }, 'image/png', 1.0);
+
+                    exportProgress.style.display = 'none';
+                } catch (error) {
+                    console.error('导出图片时发生错误:', error);
+                    alert('导出图片时发生错误: ' + error.message);
+                    exportProgress.style.display = 'none';
+                }
+            });
+
+            // 添加批量导出按钮事件
+            batchExportButton.addEventListener('click', batchExport);
+
+            // 添加JSZip库
+            const script = document.createElement('script');
+            script.src = 'https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js';
+            document.head.appendChild(script);
+        };
+    </script>
+</body>
+</html> 
